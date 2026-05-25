@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Diagnosis ────────────────────────────────────────────────────────────────
+
+model Diagnosis {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime? // soft-delete para conformidade com LGPD
+
+  leadName  String?
+  leadEmail String?
+
+  // Array de turnos: [{ role: "ai" | "user", text: string }]
+  questionnaire Json?
+
+  status   DiagnosisStatus @default(PENDING)
+  result   Json?   // preenchido quando status = DONE (5 seções do diagnóstico)
+  errorMsg String? // preenchido quando status = ERROR
+
+  transactions Transaction[]
+}
+
+enum DiagnosisStatus {
+  PENDING
+  PROCESSING
+  DONE
+  ERROR
+}
+
+// ─── Transaction ──────────────────────────────────────────────────────────────
+
+model Transaction {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+
+  diagnosisId String
+  diagnosis   Diagnosis @relation(fields: [diagnosisId], references: [id], onDelete: Cascade)
+
+  rawLine     String   // linha original intacta — base da rastreabilidade
+  date        DateTime
+  description String
+  amount      Decimal  @db.Decimal(12, 2) // Decimal evita erro de ponto flutuante
+  source      TransactionSource
+
+  category String? // null até o LLM categorizar — nunca preenchido pelo parser
+
+  @@index([diagnosisId])
+}
+
+enum TransactionSource {
+  CREDIT_CARD
+  BANK
+}
