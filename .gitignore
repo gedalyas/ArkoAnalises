@@ -2,3 +2,6 @@ node_modules/
 dist/
 .env
 *.log
+
+# dados pessoais de teste (faturas/extratos reais) — nunca versionar
+api/scripts/fixtures/

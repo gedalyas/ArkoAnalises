@@ -48,9 +48,18 @@ ArkoAnalises/
 │   │       └── 20260526025815_init/
 │   │           └── migration.sql   # primeira migration — tabelas criadas no Supabase
 │   ├── src/
-│   │   ├── app.ts              # cria o app Express (middlewares + rotas)
+│   │   ├── parsers/
+│   │   │   ├── types.ts            # ParsedTransaction (tipo do parser, sem Prisma)
+│   │   │   ├── parsePdfNubank.ts   # FATURA cartão (PDF) — recebe source
+│   │   │   ├── parseCsvNubank.ts   # FATURA cartão (CSV) — recebe source
+│   │   │   ├── parseExtratoPdf.ts  # EXTRATO conta (PDF) — stateful, sinal pelo bloco
+│   │   │   └── parseExtratoCsv.ts  # EXTRATO conta (CSV) — Data,Valor,Identificador,Descrição
+│   │   ├── db.ts              # singleton do PrismaClient
+│   │   ├── app.ts              # cria o app Express (middlewares + rotas, inclui POST /upload)
 │   │   └── server.ts           # sobe o servidor na porta 3333
-│   ├── scripts/                # pasta para scripts de teste (ex: test-parse.ts)
+│   ├── scripts/
+│   │   ├── test-parse.ts       # roda os dois parsers nos fixtures e mostra totais
+│   │   └── fixtures/           # PDF + CSV reais do Nubank para calibrar/testar
 │   ├── .env                    # NÃO vai pro git — contém as credenciais reais
 │   ├── .env.example            # template das variáveis de ambiente
 │   ├── package.json
@@ -86,6 +95,8 @@ PORT=3333
 **dependencies:**
 - `express` ^4.19.2
 - `@prisma/client` ^6.19.3
+- `pdf-parse` ^2.4.5 — **v2** (API por classe `PDFParse`, traz tipos próprios)
+- `multer` ^2.1.1 — upload `multipart/form-data` em memória
 
 **devDependencies:**
 - `prisma` ^6.19.3
@@ -93,6 +104,8 @@ PORT=3333
 - `tsx` ^4.19.0
 - `@types/express` ^4.17.21
 - `@types/node` ^22.0.0
+- `@types/multer` ^2.1.0
+- `@types/pdf-parse` ^1.1.5 — tipagem da v1; **não usada** (a v2 já tipa). Inofensiva.
 
 ---
 
@@ -153,13 +166,15 @@ Uma linha extraída deterministicamente do PDF/CSV.
 - [x] **Passo 3** — `schema.prisma` com modelos `Diagnosis` e `Transaction`
 - [x] **Passo 4** — Projeto Supabase criado (`ArkoAnalises`, us-east-1) + `.env.example`
 - [x] **Passo 5** — Primeira migration rodada (`prisma migrate dev --name init`) — tabelas criadas no Supabase
+- [x] **Passo 6** — `POST /upload` (multer em memória) detecta PDF vs CSV e parseia. Parsers determinísticos calibrados na saída REAL do `pdf-parse` v2 e no CSV. **Ainda não grava no banco** — só retorna as transações.
+- [x] **Passo 7** — `scripts/test-parse.ts` roda os dois fixtures. Validação: totais calculados em código (despesas R$ 1.400,29 / pagamentos −R$ 1.586,49) batem com os subtotais impressos na fatura.
+- [x] **Passo 8** — `POST /upload` persiste no Postgres. Campos: `file` + `source` (obrigatório, CREDIT_CARD|BANK — frontend decide) + `diagnosisId` (opcional, anexa à mesma sessão; senão cria novo). `source` escolhe a família de parser, a extensão escolhe PDF vs CSV. Cria `Diagnosis` com `transactions` aninhadas (id = cuid). Testado e2e contra o Supabase; dados de teste limpos depois.
+- [x] **Passo 9** — Parsers de EXTRATO bancário (PDF + CSV). Calibrados no extrato real; ambos = 22 transações, entradas +8.556,34 / saídas −8.556,34, batendo com os totais impressos.
 
 ---
 
 ## O que falta (continuar a partir daqui)
 
-- [ ] **Passo 6** — `POST /upload` com parser determinístico via `pdf-parse` calibrado para fatura do Nubank
-- [ ] **Passo 7** — Script `scripts/test-parse.ts` para testar o parser no console
 - [ ] **Dia 2+** — Frontend React + Vite + Tailwind 4 + Shadcn/ui
 - [ ] **Dia 2+** — Integração com Gemini gemini-2.5-flash (questionário dinâmico + diagnóstico)
 - [ ] **Dia 3+** — Deploy: API no Railway, Frontend na Vercel
@@ -194,3 +209,12 @@ npm run dev
 - **`deletedAt`** no schema desde o início — soft-delete para LGPD sem migration futura
 - **`DATABASE_URL`** no pooler Transaction Mode — compatível com serverless/Railway
 - **`DIRECT_URL`** no pooler Session Mode — necessário para migrations que precisam de conexão persistente
+- **Sinal NATIVO por documento** (não há convenção global): o parser copia o sinal como a fonte entrega.
+  - `CREDIT_CARD` (fatura): despesa +, pagamento/estorno −. "Total gasto" = soma dos amounts > 0.
+  - `BANK` (extrato): fluxo de caixa, entrada +, saída −.
+  - Logo o sinal significa coisas diferentes conforme o `source` — é o `source` que desambigua. Escolhido por minimizar transformação (mais determinístico).
+- **Extrato é cheio de ruído interno** — `Aplicação/Resgate RDB` e Pix entre as contas do próprio dono (auto-transferência) inflam entradas/saídas mas NÃO são renda/despesa. O parser não decide isso (preserva a descrição com a contraparte); **o LLM neutraliza** na categorização.
+- **Risco de dupla contagem cartão × extrato**: o `-940,29 Pagamento de fatura` no extrato é a MESMA grana das transações da fatura. Somar os dois conta o gasto duas vezes — o LLM precisa tratar (anotado para o Dia 2).
+- **Parser calibrado na saída REAL do `pdf-parse`**, não no layout visual do PDF. Compra internacional ocupa 4 linhas (desc / USD / Conversão / R$ isolado); linhas de subtotal são ignoradas por não começarem com `DD MMM`. Ano inferido do cabeçalho `FATURA DD MMM AAAA`
+- **Pagamento de fatura ≠ despesa ≠ renda** — as linhas negativas ("Pagamento recebido"/"Pagamento em XX") são o usuário quitando o cartão, não receita. O parser só grava o sinal cru (não rotula). Na categorização, o **LLM** marca como categoria própria "Pagamento de fatura" e a **exclui do total de despesas e da análise de consumo**; serve só para indicar se a fatura foi quitada. O total de consumo do mês é a soma das despesas (amount > 0)
+- **`ParsedTransaction` (parsers/types.ts) é separado do model Prisma** — o parser gera `id` sequencial em memória (`t1`, `t2`); o id definitivo (cuid) só nasce ao persistir no Passo 8
