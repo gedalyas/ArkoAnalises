@@ -13,11 +13,13 @@
     "test:parse": "tsx scripts/test-parse.ts"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "express": "^4.19.2"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.0.0",
+    "prisma": "^6.19.3",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"
   }
