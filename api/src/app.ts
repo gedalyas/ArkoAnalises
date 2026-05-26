@@ -6,6 +6,8 @@ import { parseExtratoPdf } from "./parsers/parseExtratoPdf";
 import { parseExtratoCsv } from "./parsers/parseExtratoCsv";
 import type { ParsedTransaction } from "./parsers/types";
 import { prisma } from "./db";
+import { categorizeTransactions } from "./ai/gemini";
+import { computeTotals } from "./diagnosis/totals";
 
 const SOURCES: ParsedTransaction["source"][] = ["CREDIT_CARD", "BANK"];
 
@@ -113,6 +115,58 @@ export function createApp(): Express {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Falha ao processar o arquivo.";
       return res.status(422).json({ error: message });
+    }
+  });
+
+  /**
+   * Passo 10: categoriza as transações de um Diagnosis com o LLM e grava o
+   * `category` de cada uma. O LLM só classifica; os totais são calculados em
+   * código (Regra de Ouro). Idempotente: re-rodar recategoriza tudo.
+   */
+  app.post("/diagnoses/:id/categorize", async (req, res) => {
+    const { id } = req.params;
+    try {
+      const txs = await prisma.transaction.findMany({
+        where: { diagnosisId: id, diagnosis: { deletedAt: null } },
+        orderBy: { date: "asc" },
+      });
+      if (txs.length === 0) {
+        return res.status(404).json({ error: "Diagnosis sem transações ou inexistente." });
+      }
+
+      const cats = await categorizeTransactions(
+        txs.map((t) => ({
+          id: t.id,
+          description: t.description,
+          amount: Number(t.amount),
+          source: t.source,
+        })),
+      );
+      const byId = new Map(cats.map((c) => [c.id, c.category]));
+
+      // Grava as categorias atomicamente.
+      await prisma.$transaction(
+        txs.map((t) =>
+          prisma.transaction.update({
+            where: { id: t.id },
+            data: { category: byId.get(t.id) ?? null },
+          }),
+        ),
+      );
+
+      const updated = await prisma.transaction.findMany({
+        where: { diagnosisId: id },
+        orderBy: { date: "asc" },
+      });
+      return res.json({
+        diagnosisId: id,
+        count: updated.length,
+        totals: computeTotals(updated),
+        transactions: updated,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Falha ao categorizar.";
+      return res.status(502).json({ error: message });
     }
   });
 

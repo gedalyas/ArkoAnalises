@@ -48,6 +48,11 @@ ArkoAnalises/
 │   │       └── 20260526025815_init/
 │   │           └── migration.sql   # primeira migration — tabelas criadas no Supabase
 │   ├── src/
+│   │   ├── ai/
+│   │   │   ├── categories.ts       # taxonomia fechada + mapa categoria→tratamento (DESPESA/RENDA/NEUTRO)
+│   │   │   └── gemini.ts           # cliente Gemini + categorizeTransactions (responseSchema)
+│   │   ├── diagnosis/
+│   │   │   └── totals.ts           # totais calculados em código (|amount| por tratamento)
 │   │   ├── parsers/
 │   │   │   ├── types.ts            # ParsedTransaction (tipo do parser, sem Prisma)
 │   │   │   ├── parsePdfNubank.ts   # FATURA cartão (PDF) — recebe source
@@ -170,11 +175,14 @@ Uma linha extraída deterministicamente do PDF/CSV.
 - [x] **Passo 7** — `scripts/test-parse.ts` roda os dois fixtures. Validação: totais calculados em código (despesas R$ 1.400,29 / pagamentos −R$ 1.586,49) batem com os subtotais impressos na fatura.
 - [x] **Passo 8** — `POST /upload` persiste no Postgres. Campos: `file` + `source` (obrigatório, CREDIT_CARD|BANK — frontend decide) + `diagnosisId` (opcional, anexa à mesma sessão; senão cria novo). `source` escolhe a família de parser, a extensão escolhe PDF vs CSV. Cria `Diagnosis` com `transactions` aninhadas (id = cuid). Testado e2e contra o Supabase; dados de teste limpos depois.
 - [x] **Passo 9** — Parsers de EXTRATO bancário (PDF + CSV). Calibrados no extrato real; ambos = 22 transações, entradas +8.556,34 / saídas −8.556,34, batendo com os totais impressos.
+- [x] **Passo 10** — Categorização via Gemini (`gemini-2.5-flash`, `responseSchema`, temperature 0). Endpoint `POST /diagnoses/:id/categorize`: LLM só classifica (taxonomia fechada), código grava `category` e calcula totais (`computeTotals`). Validado e2e: RDB/auto-transferência → NEUTRO; pagamento de fatura → NEUTRO (sem dupla contagem); gasto real R$ 4.445,92.
 
 ---
 
 ## O que falta (continuar a partir daqui)
 
+- [ ] **Passo 11** — Geração do diagnóstico (5 seções) via Gemini, citando os `id`s das transações; grava em `Diagnosis.result` e seta status DONE
+- [ ] **Passo 12** — Questionário dinâmico (conversa IA ↔ lead), grava em `Diagnosis.questionnaire`
 - [ ] **Dia 2+** — Frontend React + Vite + Tailwind 4 + Shadcn/ui
 - [ ] **Dia 2+** — Integração com Gemini gemini-2.5-flash (questionário dinâmico + diagnóstico)
 - [ ] **Dia 3+** — Deploy: API no Railway, Frontend na Vercel
