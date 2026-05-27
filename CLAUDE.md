@@ -81,11 +81,14 @@ ArkoAnalises/
 │   │   │   ├── api.ts              # todas as chamadas ao backend (tipadas)
 │   │   │   └── utils.ts            # cn() helper Tailwind
 │   │   ├── pages/
-│   │   │   ├── HomePage.tsx        # rota / — usa UploadStep
+│   │   │   ├── HomePage.tsx        # rota / — hero dividido (logo + pitch | card de upload), responsivo
 │   │   │   └── DiagnosisPage.tsx   # rota /d/:id — máquina de estado: questionário → gerar → relatório
+│   │   ├── assets/
+│   │   │   └── logotipo-horizontal.png  # logo oficial da Arko (usada nas telas)
 │   │   ├── App.tsx                 # BrowserRouter com rotas / e /d/:id
 │   │   ├── main.tsx
-│   │   └── index.css               # @import "tailwindcss"
+│   │   ├── vite-env.d.ts           # /// <reference types="vite/client" /> — tipa import de imagens
+│   │   └── index.css               # @import "tailwindcss" + @theme (paleta navy Arko + tokens Shadcn)
 │   ├── components.json             # configuração Shadcn/ui
 │   ├── vite.config.ts              # @tailwindcss/vite + proxy /api → :3333
 │   ├── tsconfig.json
@@ -236,6 +239,7 @@ O Vite está configurado com proxy: `/api/*` → `http://localhost:3333/*` (sem 
 ## O que falta (continuar a partir daqui)
 
 - [x] **Passo 15** — `DiagnosisPage` (`/d/:id`): máquina de estado (loading → questionário → gerando → relatório/erro). Chat com a IA (bolhas, máx 5 perguntas, botão "pular"), depois `DiagnosisReport` com as 5 seções + totais e citação das transações. Backend ganhou `GET /diagnoses/:id`; client ganhou `getDiagnosis`. Validado e2e (upload→categorize→questionnaire→generate→GET) e `vite build` ok.
+- [x] **Passo 16** — Identidade visual: logo da Arko nas telas, paleta navy + tokens do Shadcn definidos no `@theme` do `index.css` (antes `bg-primary` etc. não tinham cor), home como hero dividido e tudo responsivo no mobile. Resiliência no Gemini (`ai/retry.ts`) e fix da categorização (titular → auto-transferência vira NEUTRO, não Renda).
 - [ ] **Futuro (pós-MVP)** — Suporte a extratos de OUTROS bancos além do Nubank. Hoje os 4 parsers são calibrados só no Nubank. Generalizar exige: detectar o banco/layout, um parser por banco (ou um genérico configurável) e fixtures reais de cada banco para calibrar.
 - [ ] **Dia 3+** — Deploy: API no Railway, Frontend na Vercel
 - [ ] **Dia 3+** — README final (decisões de arquitetura, LGPD, o que cortaria/adicionaria)
@@ -283,5 +287,6 @@ O frontend usa proxy Vite: chamadas para `/api/*` vão para `http://localhost:33
 - **Parser calibrado na saída REAL do `pdf-parse`**, não no layout visual do PDF. Compra internacional ocupa 4 linhas (desc / USD / Conversão / R$ isolado); linhas de subtotal são ignoradas por não começarem com `DD MMM`. Ano inferido do cabeçalho `FATURA DD MMM AAAA`
 - **Pagamento de fatura ≠ despesa ≠ renda** — as linhas negativas ("Pagamento recebido"/"Pagamento em XX") são o usuário quitando o cartão, não receita. O parser só grava o sinal cru (não rotula). Na categorização, o **LLM** marca como categoria própria "Pagamento de fatura" e a **exclui do total de despesas e da análise de consumo**; serve só para indicar se a fatura foi quitada. O total de consumo do mês é a soma das despesas (amount > 0)
 - **Categorização recebe o `leadName` como "titular da conta"** — sem essa dica, o LLM (sobretudo o `flash-lite`) confunde "Transferência recebida pelo Pix <nome-do-próprio-titular>" (auto-transferência) com Renda, inflando a renda com dinheiro que o dono só moveu entre contas dele. Com o nome do titular no prompt, recebidas E enviadas da própria pessoa caem em "Movimentação Interna". Bug real flagrado no teste; renda caiu de R$ 3.581,34 (falsa) para R$ 0 (correto).
+- **Tokens do Shadcn definidos no `@theme` (Tailwind 4)** — os componentes usam `bg-primary`, `border-input`, `ring-ring` etc., que não existiam (o `index.css` só tinha `@import`). Foram definidos em `@theme` junto da paleta `brand-*` (navy da Arko); `primary` = navy. Sem isso os botões/cards ficavam sem cor. Imports de imagem exigem `src/vite-env.d.ts` (`vite/client`).
 - **Retry com backoff nas chamadas ao Gemini** (`ai/retry.ts`, `withRetry`) — a API retorna 503/`UNAVAILABLE` ("high demand") e 429 de forma transitória; categorize/questionnaire/generate retentam até 4x (1s,2s,4s + jitter). Erros 4xx definitivos não são retentados. A `DiagnosisPage` ainda oferece "Tentar novamente" se tudo falhar.
 - **`ParsedTransaction` (parsers/types.ts) é separado do model Prisma** — o parser gera `id` sequencial em memória (`t1`, `t2`); o id definitivo (cuid) só nasce ao persistir no Passo 8
