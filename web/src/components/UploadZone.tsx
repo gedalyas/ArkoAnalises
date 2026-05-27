@@ -38,7 +38,7 @@ export function UploadZone({ label, accept = ".pdf,.csv", file, onChange, disabl
         onDrop={handleDrop}
         className={cn(
           "relative flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-colors cursor-pointer select-none",
-          dragging && "border-blue-400 bg-blue-50",
+          dragging && "border-brand-400 bg-brand-50",
           !dragging && !file && "border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-gray-100",
           file && "border-green-400 bg-green-50",
           disabled && "opacity-50 cursor-not-allowed",
@@ -60,7 +60,7 @@ export function UploadZone({ label, accept = ".pdf,.csv", file, onChange, disabl
           <>
             <UploadCloud className="h-7 w-7 text-gray-400" />
             <span className="text-sm text-gray-500">
-              Arraste aqui ou <span className="text-blue-600 underline">clique para selecionar</span>
+              Arraste aqui ou <span className="text-brand-600 underline">clique para selecionar</span>
             </span>
             <span className="text-xs text-gray-400">PDF ou CSV</span>
           </>

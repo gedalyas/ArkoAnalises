@@ -1,7 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Totals } from "../diagnosis/totals";
+import { withRetry } from "./retry";
+import { GEMINI_MODEL as MODEL } from "./model";
 
-const MODEL = "gemini-2.5-flash";
 export const MAX_TURNS = 5;
 
 function getClient(): GoogleGenAI {
@@ -81,16 +82,18 @@ ${history.length === 0 ? "(nenhuma pergunta feita ainda)" : history.map((m) => `
 `.trim();
 
   const ai = getClient();
-  const response = await ai.models.generateContent({
-    model: MODEL,
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
-      responseMimeType: "application/json",
-      responseSchema: RESPONSE_SCHEMA,
-      temperature: 0,
-    },
-  });
+  const response = await withRetry(() =>
+    ai.models.generateContent({
+      model: MODEL,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA,
+        temperature: 0,
+      },
+    }),
+  );
 
   const text = response.text;
   if (!text) throw new Error("Gemini retornou resposta vazia.");

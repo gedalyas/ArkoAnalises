@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { ALL_CATEGORIES, type Category } from "./categories";
-
-const MODEL = "gemini-2.5-flash";
+import { withRetry } from "./retry";
+import { GEMINI_MODEL as MODEL } from "./model";
 
 let client: GoogleGenAI | null = null;
 
@@ -41,9 +41,11 @@ REGRAS ABSOLUTAS:
 COMO DECIDIR a categoria:
 - "Aplicação RDB" / "Resgate RDB" → "Investimento (Aplicação/Resgate)".
 - "Pagamento de fatura" (do cartão) → "Pagamento de Fatura".
-- Transferência (Pix/TED) em que a CONTRAPARTE é o PRÓPRIO titular da conta
-  (mesmo nome de pessoa se repetindo como remetente/destinatário) → "Movimentação Interna".
-- Recebimento vindo de TERCEIRO (empresa, cliente, empregador) → "Renda".
+- Transferência (Pix/TED) em que a CONTRAPARTE é o PRÓPRIO titular da conta → "Movimentação Interna".
+  ATENÇÃO: isso vale TANTO para "Transferência enviada" QUANTO para "Transferência RECEBIDA".
+  Uma "Transferência recebida pelo Pix" cuja contraparte é o próprio titular NÃO é renda —
+  é o titular movendo dinheiro entre contas dele mesmo. Marque como "Movimentação Interna".
+- Recebimento vindo de TERCEIRO (empresa, cliente, empregador — nome DIFERENTE do titular) → "Renda".
 - Demais saídas/compras → a categoria de despesa mais adequada pela descrição
   (ex: Linkedin/Canva/Render/software → "Assinaturas e Software"; seguro/proteção → "Seguros").
 - Na dúvida entre despesas, use "Outros Gastos".
@@ -77,25 +79,32 @@ const RESPONSE_SCHEMA = {
  */
 export async function categorizeTransactions(
   txs: TxToCategorize[],
+  accountOwner?: string,
 ): Promise<Categorization[]> {
   if (txs.length === 0) return [];
 
+  const ownerHint = accountOwner?.trim()
+    ? `TITULAR DA CONTA: "${accountOwner.trim()}". Qualquer transferência (enviada OU recebida) cuja contraparte seja esse nome (ainda que parcial/abreviado) é "Movimentação Interna", NUNCA "Renda".\n\n`
+    : "";
+
   const ai = getClient();
-  const response = await ai.models.generateContent({
-    model: MODEL,
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: `Transações:\n${JSON.stringify(txs, null, 2)}` }],
+  const response = await withRetry(() =>
+    ai.models.generateContent({
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: `${ownerHint}Transações:\n${JSON.stringify(txs, null, 2)}` }],
+        },
+      ],
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA,
+        temperature: 0,
       },
-    ],
-    config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
-      responseMimeType: "application/json",
-      responseSchema: RESPONSE_SCHEMA,
-      temperature: 0,
-    },
-  });
+    }),
+  );
 
   const text = response.text;
   if (!text) throw new Error("Gemini retornou resposta vazia.");

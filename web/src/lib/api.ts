@@ -34,11 +34,18 @@ export type DiagnosisResult = {
 
 export type DiagnosisStatus = "PENDING" | "PROCESSING" | "DONE" | "ERROR";
 
+export type QuestionnaireMessage = {
+  role: "ai" | "user";
+  text: string | null;
+  done?: boolean;
+};
+
 export type DiagnosisState = {
   id: string;
   status: DiagnosisStatus;
   result: DiagnosisResult | null;
   errorMsg: string | null;
+  questionnaire: QuestionnaireMessage[] | null;
 };
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
@@ -82,4 +89,8 @@ export async function sendQuestionnaireAnswer(
 
 export async function generateDiagnosis(diagnosisId: string): Promise<{ result: DiagnosisResult }> {
   return req<{ result: DiagnosisResult }>(`/diagnoses/${diagnosisId}/generate`, { method: "POST" });
+}
+
+export async function getDiagnosis(diagnosisId: string): Promise<DiagnosisState> {
+  return req<DiagnosisState>(`/diagnoses/${diagnosisId}`);
 }

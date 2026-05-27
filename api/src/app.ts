@@ -147,11 +147,15 @@ export function createApp(): Express {
   app.post("/diagnoses/:id/categorize", async (req, res) => {
     const { id } = req.params;
     try {
+      const diagnosis = await prisma.diagnosis.findFirst({
+        where: { id, deletedAt: null },
+        select: { leadName: true },
+      });
       const txs = await prisma.transaction.findMany({
         where: { diagnosisId: id, diagnosis: { deletedAt: null } },
         orderBy: { date: "asc" },
       });
-      if (txs.length === 0) {
+      if (!diagnosis || txs.length === 0) {
         return res.status(404).json({ error: "Diagnosis sem transações ou inexistente." });
       }
 
@@ -162,6 +166,7 @@ export function createApp(): Express {
           amount: Number(t.amount),
           source: t.source,
         })),
+        diagnosis.leadName ?? undefined,
       );
       const byId = new Map(cats.map((c) => [c.id, c.category]));
 
@@ -325,6 +330,28 @@ export function createApp(): Express {
       const message = err instanceof Error ? err.message : "Falha ao gerar diagnóstico.";
       return res.status(502).json({ error: message });
     }
+  });
+
+  /**
+   * Passo 15: estado atual de um Diagnosis para o frontend decidir a tela
+   * (questionário vs relatório) com base no `status`.
+   */
+  app.get("/diagnoses/:id", async (req, res) => {
+    const { id } = req.params;
+    const diagnosis = await prisma.diagnosis.findFirst({
+      where: { id, deletedAt: null },
+      select: {
+        id: true,
+        status: true,
+        result: true,
+        errorMsg: true,
+        questionnaire: true,
+      },
+    });
+    if (!diagnosis) {
+      return res.status(404).json({ error: "Diagnosis não encontrado." });
+    }
+    return res.json(diagnosis);
   });
 
   return app;

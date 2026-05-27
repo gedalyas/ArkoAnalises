@@ -9,9 +9,9 @@ import { treatmentOf } from "../src/ai/categories";
 const FIXTURES = join(__dirname, "fixtures");
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-async function run(label: string, txs: TxToCategorize[]) {
+async function run(label: string, txs: TxToCategorize[], accountOwner?: string) {
   console.log(`\n===== ${label} =====`);
-  const cats = await categorizeTransactions(txs);
+  const cats = await categorizeTransactions(txs, accountOwner);
   const byId = new Map(cats.map((c) => [c.id, c]));
 
   const totals: Record<string, number> = { DESPESA: 0, RENDA: 0, NEUTRO: 0 };
@@ -38,7 +38,9 @@ async function main() {
   const bank = parseExtratoCsv(csv).map((t) => ({
     id: t.id, description: t.description, amount: t.amount, source: t.source,
   }));
-  await run("EXTRATO CONTA", bank);
+  // Nome do titular via env (não commitar nome pessoal). Sem ele, auto-transferências
+  // recebidas podem ser confundidas com renda — defina TEST_ACCOUNT_OWNER para testar o fix.
+  await run("EXTRATO CONTA", bank, process.env.TEST_ACCOUNT_OWNER);
 }
 
 main().catch((e) => {

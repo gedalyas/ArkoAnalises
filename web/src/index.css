@@ -1,1 +1,43 @@
 @import "tailwindcss";
+
+@theme {
+  /* ── Marca Arko (azul-marinho) ───────────────────────────── */
+  --color-brand-50: #eef2fb;
+  --color-brand-100: #dde4f6;
+  --color-brand-200: #c0cdec;
+  --color-brand-300: #97aade;
+  --color-brand-400: #6a82cb;
+  --color-brand-500: #4861b4;
+  --color-brand-600: #354b97;
+  --color-brand-700: #2b3d7a;
+  --color-brand-800: #243364;
+  --color-brand-900: #1b264b;
+
+  /* ── Tokens semânticos do Shadcn/ui ──────────────────────── */
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0f172a;
+
+  --color-primary: #2b3d7a; /* = brand-700 */
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #eef2fb; /* = brand-50 */
+  --color-secondary-foreground: #2b3d7a;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+  --color-accent: #f1f5f9;
+  --color-accent-foreground: #0f172a;
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+
+  --color-border: #e2e8f0;
+  --color-input: #e2e8f0;
+  --color-ring: #2b3d7a;
+}
+
+/* Fundo suave da aplicação com leve tom da marca */
+body {
+  background-color: #f6f8fc;
+}

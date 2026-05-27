@@ -122,16 +122,16 @@ export function UploadStep() {
               className={cn(
                 "flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-colors",
                 path === p.id
-                  ? "border-blue-500 bg-blue-50"
+                  ? "border-brand-500 bg-brand-50"
                   : "border-gray-200 bg-white hover:border-gray-300",
                 loading && "opacity-50 cursor-not-allowed",
               )}
             >
-              <span className={cn(path === p.id ? "text-blue-600" : "text-gray-400")}>
+              <span className={cn(path === p.id ? "text-brand-600" : "text-gray-400")}>
                 {p.icon}
               </span>
               <div>
-                <p className={cn("text-sm font-semibold", path === p.id ? "text-blue-700" : "text-gray-800")}>
+                <p className={cn("text-sm font-semibold", path === p.id ? "text-brand-700" : "text-gray-800")}>
                   {p.title}
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5">{p.description}</p>

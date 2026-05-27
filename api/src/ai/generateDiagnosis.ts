@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Totals } from "../diagnosis/totals";
-
-const MODEL = "gemini-2.5-flash";
+import { withRetry } from "./retry";
+import { GEMINI_MODEL as MODEL } from "./model";
 
 function getClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -197,16 +197,18 @@ ${JSON.stringify(txs, null, 2)}
 `.trim();
 
   const ai = getClient();
-  const response = await ai.models.generateContent({
-    model: MODEL,
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
-      responseMimeType: "application/json",
-      responseSchema: RESPONSE_SCHEMA,
-      temperature: 0,
-    },
-  });
+  const response = await withRetry(() =>
+    ai.models.generateContent({
+      model: MODEL,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA,
+        temperature: 0,
+      },
+    }),
+  );
 
   const text = response.text;
   if (!text) throw new Error("Gemini retornou resposta vazia.");
