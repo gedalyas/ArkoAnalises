@@ -30,7 +30,7 @@ Desafio técnico de 4 dias. O parceiro de programação é o usuário — avance
 | Backend | Express **^4** (NÃO 5), TypeScript **^5**, Node **22** |
 | ORM | Prisma **^6** |
 | Banco | PostgreSQL no **Supabase** |
-| Frontend | React **^19**, Vite **^7**, Tailwind **^4** |
+| Frontend | React **^19**, Vite **^8** (criado com create-vite — v7 incompatível com plugin-react v6), Tailwind **^4** |
 | Tailwind setup | `@import "tailwindcss"` + plugin `@tailwindcss/vite` — **SEM** `tailwind.config.js` v3 |
 | UI | Shadcn/ui |
 | IA | Gemini **gemini-2.5-flash** com `responseSchema` |
@@ -50,7 +50,8 @@ ArkoAnalises/
 │   ├── src/
 │   │   ├── ai/
 │   │   │   ├── categories.ts       # taxonomia fechada + mapa categoria→tratamento (DESPESA/RENDA/NEUTRO)
-│   │   │   └── gemini.ts           # cliente Gemini + categorizeTransactions (responseSchema)
+│   │   │   ├── gemini.ts           # cliente Gemini + categorizeTransactions (responseSchema)
+│   │   └── generateDiagnosis.ts # generateDiagnosis: 5 seções, totais pré-calculados em código
 │   │   ├── diagnosis/
 │   │   │   └── totals.ts           # totais calculados em código (|amount| por tratamento)
 │   │   ├── parsers/
@@ -60,7 +61,7 @@ ArkoAnalises/
 │   │   │   ├── parseExtratoPdf.ts  # EXTRATO conta (PDF) — stateful, sinal pelo bloco
 │   │   │   └── parseExtratoCsv.ts  # EXTRATO conta (CSV) — Data,Valor,Identificador,Descrição
 │   │   ├── db.ts              # singleton do PrismaClient
-│   │   ├── app.ts              # cria o app Express (middlewares + rotas, inclui POST /upload)
+│   │   ├── app.ts              # cria o app Express (middlewares + rotas, inclui POST /upload, /categorize, /generate)
 │   │   └── server.ts           # sobe o servidor na porta 3333
 │   ├── scripts/
 │   │   ├── test-parse.ts       # roda os dois parsers nos fixtures e mostra totais
@@ -69,7 +70,25 @@ ArkoAnalises/
 │   ├── .env.example            # template das variáveis de ambiente
 │   ├── package.json
 │   └── tsconfig.json
-├── web/                        # Frontend (ainda vazio)
+├── web/                        # Frontend React + Vite + Tailwind 4 + Shadcn/ui
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── ui/                 # Shadcn/ui: button, card, badge, progress, separator, input, label
+│   │   │   ├── UploadZone.tsx      # drag & drop de PDF/CSV (reutilizável)
+│   │   │   └── UploadStep.tsx      # formulário completo: nome*, email*, 3 caminhos, upload, submit
+│   │   ├── lib/
+│   │   │   ├── api.ts              # todas as chamadas ao backend (tipadas)
+│   │   │   └── utils.ts            # cn() helper Tailwind
+│   │   ├── pages/
+│   │   │   ├── HomePage.tsx        # rota / — usa UploadStep
+│   │   │   └── DiagnosisPage.tsx   # rota /d/:id — stub (questionnaire + resultado a implementar)
+│   │   ├── App.tsx                 # BrowserRouter com rotas / e /d/:id
+│   │   ├── main.tsx
+│   │   └── index.css               # @import "tailwindcss"
+│   ├── components.json             # configuração Shadcn/ui
+│   ├── vite.config.ts              # @tailwindcss/vite + proxy /api → :3333
+│   ├── tsconfig.json
+│   └── package.json
 ├── .gitignore                  # inclui .env, node_modules, dist
 └── CLAUDE.md                   # este arquivo
 ```
@@ -97,13 +116,14 @@ PORT=3333
 
 ## Dependências instaladas (api/)
 
-**dependencies:**
+**dependencies (api/):**
 - `express` ^4.19.2
 - `@prisma/client` ^6.19.3
 - `pdf-parse` ^2.4.5 — **v2** (API por classe `PDFParse`, traz tipos próprios)
 - `multer` ^2.1.1 — upload `multipart/form-data` em memória
+- `@google/genai` ^2.6.0 — SDK Gemini (categorização + diagnóstico + questionário)
 
-**devDependencies:**
+**devDependencies (api/):**
 - `prisma` ^6.19.3
 - `typescript` ^5.5.0
 - `tsx` ^4.19.0
@@ -111,6 +131,17 @@ PORT=3333
 - `@types/node` ^22.0.0
 - `@types/multer` ^2.1.0
 - `@types/pdf-parse` ^1.1.5 — tipagem da v1; **não usada** (a v2 já tipa). Inofensiva.
+
+**dependencies (web/):**
+- `react` ^19, `react-dom` ^19
+- `react-router-dom` ^7
+- `lucide-react`, `clsx`, `tailwind-merge`, `class-variance-authority` — utilitários Shadcn
+- `@radix-ui/react-label`, `@radix-ui/react-progress`, `@radix-ui/react-separator`, `@radix-ui/react-slot`
+
+**devDependencies (web/):**
+- `vite` ^8, `@vitejs/plugin-react` ^6
+- `@tailwindcss/vite` ^4, `tailwindcss` ^4
+- `typescript` ^5, `@types/react` ^19, `@types/react-dom` ^19
 
 ---
 
@@ -164,6 +195,18 @@ Uma linha extraída deterministicamente do PDF/CSV.
 
 ---
 
+## Scripts disponíveis (web/)
+
+```bash
+npm run dev      # Vite dev server em http://localhost:5173
+npm run build    # tsc + vite build
+npm run preview  # preview do build
+```
+
+O Vite está configurado com proxy: `/api/*` → `http://localhost:3333/*` (sem CORS em dev).
+
+---
+
 ## O que foi feito (Dia 1)
 
 - [x] **Passo 1** — Estrutura monorepo `/api` e `/web`
@@ -176,35 +219,47 @@ Uma linha extraída deterministicamente do PDF/CSV.
 - [x] **Passo 8** — `POST /upload` persiste no Postgres. Campos: `file` + `source` (obrigatório, CREDIT_CARD|BANK — frontend decide) + `diagnosisId` (opcional, anexa à mesma sessão; senão cria novo). `source` escolhe a família de parser, a extensão escolhe PDF vs CSV. Cria `Diagnosis` com `transactions` aninhadas (id = cuid). Testado e2e contra o Supabase; dados de teste limpos depois.
 - [x] **Passo 9** — Parsers de EXTRATO bancário (PDF + CSV). Calibrados no extrato real; ambos = 22 transações, entradas +8.556,34 / saídas −8.556,34, batendo com os totais impressos.
 - [x] **Passo 10** — Categorização via Gemini (`gemini-2.5-flash`, `responseSchema`, temperature 0). Endpoint `POST /diagnoses/:id/categorize`: LLM só classifica (taxonomia fechada), código grava `category` e calcula totais (`computeTotals`). Validado e2e: RDB/auto-transferência → NEUTRO; pagamento de fatura → NEUTRO (sem dupla contagem); gasto real R$ 4.445,92.
+- [x] **Passo 11** — Geração do diagnóstico completo (5 seções) via Gemini. Endpoint `POST /diagnoses/:id/generate`: totais calculados em código (`computeTotals`) e enviados prontos ao LLM — o LLM só gera narrativa e cita `id`s das transações. Bloqueia com 400 se houver transações sem categoria. Grava em `Diagnosis.result` e seta status DONE (ou ERROR em falha). Funciona nos 3 cenários: só fatura, só extrato, ou ambos — quando `rendaTotal = 0` o LLM observa que renda não foi identificada nos dados.
+
+---
+
+## O que foi feito (Dia 2)
+
+- [x] **Passo 11** — Geração do diagnóstico completo (5 seções) via Gemini. Endpoint `POST /diagnoses/:id/generate`: totais calculados em código (`computeTotals`) e enviados prontos ao LLM — o LLM só gera narrativa e cita `id`s das transações. Bloqueia com 400 se houver transações sem categoria. Grava em `Diagnosis.result` e seta status DONE (ou ERROR em falha). Funciona nos 3 cenários: só fatura, só extrato, ou ambos — quando `rendaTotal = 0` o LLM observa que renda não foi identificada nos dados.
+- [x] **Passo 12** — Questionário dinâmico (conversa IA ↔ lead), grava em `Diagnosis.questionnaire`. Endpoint `POST /diagnoses/:id/questionnaire`: body `{ answer?, skip? }`. LLM decide próxima pergunta (máx 5 turnos) com base nas lacunas dos dados. `skip: true` encerra sem resposta. Frontend libera o /generate quando receber `done: true`.
+- [x] **Passo 13** — Frontend base: Vite 8 + React 19 + Tailwind 4 + Shadcn/ui configurados. Roteamento com `react-router-dom` (rotas `/` e `/d/:id`). Proxy Vite → API na porta 3333.
+- [x] **Passo 14** — Tela de upload (`/`): campos nome* e email* obrigatórios, seleção dos 3 caminhos (só cartão / só extrato / ambos), zonas de drag & drop por arquivo, botão desabilitado até tudo preenchido. Ao submeter: faz upload → categoriza → navega para `/d/:id`. Backend validado para exigir `leadName` e `leadEmail` no primeiro upload.
 
 ---
 
 ## O que falta (continuar a partir daqui)
 
-- [ ] **Passo 11** — Geração do diagnóstico (5 seções) via Gemini, citando os `id`s das transações; grava em `Diagnosis.result` e seta status DONE
-- [ ] **Passo 12** — Questionário dinâmico (conversa IA ↔ lead), grava em `Diagnosis.questionnaire`
-- [ ] **Dia 2+** — Frontend React + Vite + Tailwind 4 + Shadcn/ui
-- [ ] **Dia 2+** — Integração com Gemini gemini-2.5-flash (questionário dinâmico + diagnóstico)
+- [ ] **Passo 15** — `DiagnosisPage` (`/d/:id`): tela do questionário (chat com a IA, máx 5 perguntas, botão "pular") + tela do diagnóstico (relatório visual com as 5 seções). A página decide o que mostrar com base no `status` do Diagnosis.
 - [ ] **Dia 3+** — Deploy: API no Railway, Frontend na Vercel
+- [ ] **Dia 3+** — README final (decisões de arquitetura, LGPD, o que cortaria/adicionaria)
 
 ---
 
 ## Como rodar localmente
 
 ```bash
-# 1. instalar dependências
-cd api && npm install
-
-# 2. criar api/.env com as credenciais do Supabase (ver .env.example)
-
-# 3. aplicar migrations (se o banco estiver vazio)
-npx prisma migrate dev
-
-# 4. subir o servidor
+# --- API ---
+cd api
+npm install
+# criar api/.env com as credenciais do Supabase (ver .env.example) + GEMINI_API_KEY
+npx prisma migrate dev   # só se o banco estiver vazio
 npm run dev
-# → API em http://localhost:3333
-# → GET /health deve retornar { status: "ok", service: "diagnostico-express-api" }
+# → http://localhost:3333
+# → GET /health retorna { status: "ok", service: "diagnostico-express-api" }
+
+# --- Frontend (outro terminal) ---
+cd web
+npm install
+npm run dev
+# → http://localhost:5173
 ```
+
+O frontend usa proxy Vite: chamadas para `/api/*` vão para `http://localhost:3333/*` automaticamente.
 
 ---
 

@@ -7,6 +7,8 @@ import { parseExtratoCsv } from "./parsers/parseExtratoCsv";
 import type { ParsedTransaction } from "./parsers/types";
 import { prisma } from "./db";
 import { categorizeTransactions } from "./ai/gemini";
+import { generateDiagnosis } from "./ai/generateDiagnosis";
+import { getNextQuestion, type QuestionnaireMessage } from "./ai/questionnaire";
 import { computeTotals } from "./diagnosis/totals";
 
 const SOURCES: ParsedTransaction["source"][] = ["CREDIT_CARD", "BANK"];
@@ -53,6 +55,19 @@ export function createApp(): Express {
       return res.status(400).json({ error: `Campo 'source' obrigatório: ${SOURCES.join(" ou ")}.` });
     }
 
+    const diagnosisIdFromBody = req.body?.diagnosisId as string | undefined;
+    if (!diagnosisIdFromBody) {
+      // Primeiro upload da sessão — nome e email são obrigatórios
+      const leadName = req.body?.leadName as string | undefined;
+      const leadEmail = req.body?.leadEmail as string | undefined;
+      if (!leadName?.trim()) {
+        return res.status(400).json({ error: "Campo 'leadName' é obrigatório." });
+      }
+      if (!leadEmail?.trim()) {
+        return res.status(400).json({ error: "Campo 'leadEmail' é obrigatório." });
+      }
+    }
+
     const name = file.originalname.toLowerCase();
     const isPdf = name.endsWith(".pdf") || file.mimetype === "application/pdf";
     const isCsv = name.endsWith(".csv") || file.mimetype === "text/csv";
@@ -83,7 +98,9 @@ export function createApp(): Express {
         // category fica null — só o LLM categoriza
       }));
 
-      const diagnosisId = req.body?.diagnosisId as string | undefined;
+      const diagnosisId = diagnosisIdFromBody;
+      const leadName = req.body?.leadName as string | undefined;
+      const leadEmail = req.body?.leadEmail as string | undefined;
 
       if (diagnosisId) {
         const exists = await prisma.diagnosis.findFirst({
@@ -104,7 +121,11 @@ export function createApp(): Express {
       }
 
       const diagnosis = await prisma.diagnosis.create({
-        data: { transactions: { create: data } },
+        data: {
+          leadName: leadName || null,
+          leadEmail: leadEmail || null,
+          transactions: { create: data },
+        },
         include: { transactions: { orderBy: { date: "asc" } } },
       });
       return res.status(201).json({
@@ -166,6 +187,142 @@ export function createApp(): Express {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Falha ao categorizar.";
+      return res.status(502).json({ error: message });
+    }
+  });
+
+  /**
+   * Passo 12: questionário dinâmico guiado por IA.
+   *
+   * POST /diagnoses/:id/questionnaire
+   * body: { answer?: string, skip?: boolean }
+   *
+   * - Primeira chamada: body vazio ou sem "answer" → LLM gera a primeira pergunta
+   * - Chamadas seguintes: { answer: "resposta do lead" } → LLM decide próxima pergunta ou encerra
+   * - { skip: true } → encerra imediatamente sem chamar o LLM (lead não quer responder)
+   *
+   * Resposta: { question: string | null, done: boolean, turn: number }
+   */
+  app.post("/diagnoses/:id/questionnaire", async (req, res) => {
+    const { id } = req.params;
+    const { answer, skip } = req.body as { answer?: string; skip?: boolean };
+
+    try {
+      const diagnosis = await prisma.diagnosis.findFirst({
+        where: { id, deletedAt: null },
+        include: { transactions: true },
+      });
+
+      if (!diagnosis) {
+        return res.status(404).json({ error: "Diagnosis não encontrado." });
+      }
+
+      const history: QuestionnaireMessage[] = Array.isArray(diagnosis.questionnaire)
+        ? (diagnosis.questionnaire as QuestionnaireMessage[])
+        : [];
+
+      // Já encerrado
+      if (history.some((m) => m.done)) {
+        return res.json({ question: null, done: true, turn: history.filter((m) => m.role === "ai").length });
+      }
+
+      // Lead optou por pular
+      if (skip) {
+        const updated = [...history, { role: "ai" as const, text: null, done: true }];
+        await prisma.diagnosis.update({ where: { id }, data: { questionnaire: updated } });
+        return res.json({ question: null, done: true, turn: history.filter((m) => m.role === "ai").length });
+      }
+
+      // Anexa a resposta do lead ao histórico (se houver)
+      const historyWithAnswer: QuestionnaireMessage[] =
+        answer?.trim()
+          ? [...history, { role: "user" as const, text: answer.trim() }]
+          : history;
+
+      // Monta o resumo condensado das transações para o LLM
+      const totals = computeTotals(diagnosis.transactions);
+      const rendaDescricoes = diagnosis.transactions
+        .filter((t) => t.category === "Renda")
+        .map((t) => t.description);
+      const summary = { totais: totals, rendaDescricoes, despesaPorCategoria: totals.despesaPorCategoria };
+
+      const { question, done } = await getNextQuestion(summary, historyWithAnswer);
+
+      const finalHistory: QuestionnaireMessage[] = done
+        ? [...historyWithAnswer, { role: "ai", text: null, done: true }]
+        : [...historyWithAnswer, { role: "ai", text: question }];
+
+      await prisma.diagnosis.update({ where: { id }, data: { questionnaire: finalHistory } });
+
+      const turn = finalHistory.filter((m) => m.role === "ai").length;
+      return res.json({ question: done ? null : question, done, turn });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Falha no questionário.";
+      return res.status(502).json({ error: message });
+    }
+  });
+
+  /**
+   * Passo 11: gera o diagnóstico completo (5 seções) via Gemini.
+   * Pré-condição: todas as transações já devem ter category (rode /categorize antes).
+   * Os totais são calculados em código e enviados prontos ao LLM — ele só narra e cita ids.
+   */
+  app.post("/diagnoses/:id/generate", async (req, res) => {
+    const { id } = req.params;
+    try {
+      const diagnosis = await prisma.diagnosis.findFirst({
+        where: { id, deletedAt: null },
+        include: { transactions: { orderBy: { date: "asc" } } },
+      });
+
+      if (!diagnosis) {
+        return res.status(404).json({ error: "Diagnosis não encontrado." });
+      }
+
+      const uncategorized = diagnosis.transactions.filter((t) => !t.category);
+      if (uncategorized.length > 0) {
+        return res.status(400).json({
+          error: `${uncategorized.length} transação(ões) sem categoria. Rode POST /diagnoses/${id}/categorize primeiro.`,
+        });
+      }
+
+      await prisma.diagnosis.update({
+        where: { id },
+        data: { status: "PROCESSING" },
+      });
+
+      const totals = computeTotals(diagnosis.transactions);
+
+      const txsForLlm = diagnosis.transactions.map((t) => ({
+        id: t.id,
+        date: t.date.toISOString().slice(0, 10),
+        description: t.description,
+        amount: Number(t.amount),
+        source: t.source as "CREDIT_CARD" | "BANK",
+        category: t.category!,
+      }));
+
+      const result = await generateDiagnosis(
+        txsForLlm,
+        totals,
+        diagnosis.questionnaire ?? undefined,
+      );
+
+      await prisma.diagnosis.update({
+        where: { id },
+        data: { status: "DONE", result: result as object },
+      });
+
+      return res.json({ diagnosisId: id, result });
+    } catch (err) {
+      await prisma.diagnosis.update({
+        where: { id: req.params.id },
+        data: {
+          status: "ERROR",
+          errorMsg: err instanceof Error ? err.message : "Falha ao gerar diagnóstico.",
+        },
+      });
+      const message = err instanceof Error ? err.message : "Falha ao gerar diagnóstico.";
       return res.status(502).json({ error: message });
     }
   });
