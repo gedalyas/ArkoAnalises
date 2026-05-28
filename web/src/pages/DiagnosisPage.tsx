@@ -21,6 +21,7 @@ const MAX_TURNS = 5;
 export function DiagnosisPage() {
   const { id } = useParams<{ id: string }>();
   const initRef = useRef(false);
+  const sendingRef = useRef(false); // guard síncrono contra chamadas concorrentes ao questionário
 
   const [phase, setPhase] = useState<Phase>("loading");
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -48,6 +49,8 @@ export function DiagnosisPage() {
   }
 
   async function askNext(answer?: string, skip?: boolean) {
+    if (sendingRef.current) return; // ignora chamada concorrente (Enter repetido, duplo submit)
+    sendingRef.current = true;
     setBusy(true);
     setInput("");
     try {
@@ -62,6 +65,7 @@ export function DiagnosisPage() {
     } catch (e) {
       fail(e);
     } finally {
+      sendingRef.current = false;
       setBusy(false);
     }
   }

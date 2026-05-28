@@ -15,6 +15,20 @@ import { extractRendaInformada } from "./diagnosis/income";
 
 const SOURCES: ParsedTransaction["source"][] = ["CREDIT_CARD", "BANK"];
 
+/** Estado do questionário derivado do histórico (reusado quando há corrida de escrita). */
+function questionnaireState(history: QuestionnaireMessage[]) {
+  const turn = history.filter((m) => m.role === "ai").length;
+  if (history.some((m) => m.done)) return { question: null, done: true, turn };
+  const lastAi = [...history].reverse().find((m) => m.role === "ai" && m.text);
+  return { question: lastAi?.text ?? null, done: false, turn };
+}
+
+/** Relê o histórico atual do questionário (após uma corrida detectada). */
+async function freshQuestionnaire(id: string): Promise<QuestionnaireMessage[]> {
+  const d = await prisma.diagnosis.findUnique({ where: { id }, select: { questionnaire: true } });
+  return Array.isArray(d?.questionnaire) ? (d!.questionnaire as QuestionnaireMessage[]) : [];
+}
+
 // Upload em memória: o parser trabalha sobre o buffer, nada é gravado em disco.
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -230,20 +244,31 @@ export function createApp(): Express {
         return res.status(404).json({ error: "Diagnosis não encontrado." });
       }
 
+      // Versão lida — usada como guard de concorrência otimista na escrita.
+      const expectedUpdatedAt = diagnosis.updatedAt;
       const history: QuestionnaireMessage[] = Array.isArray(diagnosis.questionnaire)
         ? (diagnosis.questionnaire as QuestionnaireMessage[])
         : [];
 
       // Já encerrado
       if (history.some((m) => m.done)) {
-        return res.json({ question: null, done: true, turn: history.filter((m) => m.role === "ai").length });
+        return res.json(questionnaireState(history));
       }
+
+      // Grava SÓ se ninguém alterou o questionário desde a leitura (where: updatedAt).
+      // Em corrida, count = 0 → relê e devolve o estado atual, sem duplicar/embaralhar.
+      const commit = async (finalHistory: QuestionnaireMessage[]) => {
+        const saved = await prisma.diagnosis.updateMany({
+          where: { id, updatedAt: expectedUpdatedAt },
+          data: { questionnaire: finalHistory },
+        });
+        if (saved.count === 0) return questionnaireState(await freshQuestionnaire(id));
+        return questionnaireState(finalHistory);
+      };
 
       // Lead optou por pular
       if (skip) {
-        const updated = [...history, { role: "ai" as const, text: null, done: true }];
-        await prisma.diagnosis.update({ where: { id }, data: { questionnaire: updated } });
-        return res.json({ question: null, done: true, turn: history.filter((m) => m.role === "ai").length });
+        return res.json(await commit([...history, { role: "ai", text: null, done: true }]));
       }
 
       // Anexa a resposta do lead ao histórico (se houver)
@@ -265,10 +290,7 @@ export function createApp(): Express {
         ? [...historyWithAnswer, { role: "ai", text: null, done: true }]
         : [...historyWithAnswer, { role: "ai", text: question }];
 
-      await prisma.diagnosis.update({ where: { id }, data: { questionnaire: finalHistory } });
-
-      const turn = finalHistory.filter((m) => m.role === "ai").length;
-      return res.json({ question: done ? null : question, done, turn });
+      return res.json(await commit(finalHistory));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Falha no questionário.";
       return res.status(502).json({ error: message });
