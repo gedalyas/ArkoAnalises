@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { UploadZone } from "./UploadZone";
+import { MultiUploadZone } from "./MultiUploadZone";
 import { uploadFile, categorize } from "@/lib/api";
 
 type Path = "card" | "bank" | "both";
@@ -14,8 +15,8 @@ const PATHS: { id: Path; icon: React.ReactNode; title: string; description: stri
   {
     id: "card",
     icon: <CreditCard className="h-6 w-6" />,
-    title: "Só fatura do cartão",
-    description: "PDF ou CSV da fatura Nubank (ou similar)",
+    title: "Só fatura(s) do cartão",
+    description: "Uma ou mais faturas em PDF ou CSV",
   },
   {
     id: "bank",
@@ -37,7 +38,7 @@ export function UploadStep() {
   const [leadName, setLeadName] = useState("");
   const [leadEmail, setLeadEmail] = useState("");
   const [path, setPath] = useState<Path | null>(null);
-  const [cardFile, setCardFile] = useState<File | null>(null);
+  const [cardFiles, setCardFiles] = useState<File[]>([]);
   const [bankFile, setBankFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +48,7 @@ export function UploadStep() {
     leadName.trim().length > 0 &&
     leadEmail.trim().length > 0 &&
     path !== null &&
-    (path === "bank" ? !!bankFile : !!cardFile) &&
+    (path === "bank" ? !!bankFile : cardFiles.length > 0) &&
     (path === "both" ? !!bankFile : true);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -56,25 +57,26 @@ export function UploadStep() {
     setLoading(true);
     setError(null);
 
+    // Monta a fila de uploads: faturas (1+) e/ou extrato (0-1).
+    const fila: { file: File; source: "CREDIT_CARD" | "BANK" }[] = [];
+    if (path !== "bank") cardFiles.forEach((f) => fila.push({ file: f, source: "CREDIT_CARD" }));
+    if (path !== "card" && bankFile) fila.push({ file: bankFile, source: "BANK" });
+
     try {
-      // 1. Primeiro upload — cria o Diagnosis e retorna o diagnosisId
-      let diagnosisId: string;
-      if (path === "bank") {
-        const res = await uploadFile(bankFile!, "BANK", undefined, leadName, leadEmail);
+      // O primeiro upload cria o Diagnosis (com nome/email); os demais anexam via diagnosisId.
+      let diagnosisId: string | undefined;
+      for (const u of fila) {
+        const res = await uploadFile(
+          u.file,
+          u.source,
+          diagnosisId,
+          diagnosisId ? undefined : leadName,
+          diagnosisId ? undefined : leadEmail,
+        );
         diagnosisId = res.diagnosisId;
-      } else {
-        const res = await uploadFile(cardFile!, "CREDIT_CARD", undefined, leadName, leadEmail);
-        diagnosisId = res.diagnosisId;
-        // 2. Se "ambos", envia o extrato na mesma sessão
-        if (path === "both") {
-          await uploadFile(bankFile!, "BANK", diagnosisId);
-        }
       }
 
-      // 3. Categoriza em background (rápido, ~5s) antes de ir para a próxima tela
-      await categorize(diagnosisId);
-
-      // 4. Navega para o questionário/diagnóstico
+      await categorize(diagnosisId!);
       navigate(`/d/${diagnosisId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao enviar os arquivos.");
@@ -117,7 +119,7 @@ export function UploadStep() {
             <button
               key={p.id}
               type="button"
-              onClick={() => { setPath(p.id); setCardFile(null); setBankFile(null); }}
+              onClick={() => { setPath(p.id); setCardFiles([]); setBankFile(null); }}
               disabled={loading}
               className={cn(
                 "flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-colors",
@@ -145,10 +147,10 @@ export function UploadStep() {
       {path && (
         <div className={cn("grid gap-4", path === "both" ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1")}>
           {path !== "bank" && (
-            <UploadZone
-              label="Fatura do cartão"
-              file={cardFile}
-              onChange={setCardFile}
+            <MultiUploadZone
+              label="Faturas do cartão"
+              files={cardFiles}
+              onChange={setCardFiles}
               disabled={loading}
             />
           )}

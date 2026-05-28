@@ -75,7 +75,8 @@ ArkoAnalises/
 │   │   ├── components/
 │   │   │   ├── ui/                 # Shadcn/ui: button, card, badge, progress, separator, input, label
 │   │   │   ├── UploadZone.tsx      # drag & drop de PDF/CSV (reutilizável)
-│   │   │   ├── UploadStep.tsx      # formulário completo: nome*, email*, 3 caminhos, upload, submit
+│   │   │   ├── MultiUploadZone.tsx # drag & drop de VÁRIOS arquivos (faturas) com lista + remover
+│   │   │   ├── UploadStep.tsx      # formulário: nome*, email*, 3 caminhos, 1+ faturas e/ou extrato
 │   │   │   └── DiagnosisReport.tsx # relatório visual das 5 seções + totais
 │   │   ├── lib/
 │   │   │   ├── api.ts              # todas as chamadas ao backend (tipadas)
@@ -240,6 +241,7 @@ O Vite está configurado com proxy: `/api/*` → `http://localhost:3333/*` (sem 
 
 - [x] **Passo 15** — `DiagnosisPage` (`/d/:id`): máquina de estado (loading → questionário → gerando → relatório/erro). Chat com a IA (bolhas, máx 5 perguntas, botão "pular"), depois `DiagnosisReport` com as 5 seções + totais e citação das transações. Backend ganhou `GET /diagnoses/:id`; client ganhou `getDiagnosis`. Validado e2e (upload→categorize→questionnaire→generate→GET) e `vite build` ok.
 - [x] **Passo 16** — Identidade visual: logo da Arko nas telas, paleta navy + tokens do Shadcn definidos no `@theme` do `index.css` (antes `bg-primary` etc. não tinham cor), home como hero dividido e tudo responsivo no mobile. Resiliência no Gemini (`ai/retry.ts`) e fix da categorização (titular → auto-transferência vira NEUTRO, não Renda).
+- [x] **Passo 17** — Confiabilidade e múltiplos arquivos: (a) relatório cita AS LINHAS (descrição+valor) que sustentam cada afirmação — `GET /diagnoses/:id` agora inclui as transactions; (b) renda informada no questionário entra em saldo livre/taxa de poupança (extraída em código, marcada como "informada"); (c) `MultiUploadZone` permite 1+ faturas (backend anexa via `diagnosisId` — validado 26 tx / R$ 2.800,58); (d) questionário à prova de corrida (guard no front + escrita atômica no back); (e) categorização com guia de categorias + IOF herdando a compra + default `gemini-2.5-flash`.
 - [ ] **Futuro (pós-MVP)** — Suporte a extratos de OUTROS bancos além do Nubank. Hoje os 4 parsers são calibrados só no Nubank. Generalizar exige: detectar o banco/layout, um parser por banco (ou um genérico configurável) e fixtures reais de cada banco para calibrar.
 - [ ] **Dia 3+** — Deploy: API no Railway, Frontend na Vercel
 - [ ] **Dia 3+** — README final (decisões de arquitetura, LGPD, o que cortaria/adicionaria)
