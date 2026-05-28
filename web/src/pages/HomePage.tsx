@@ -36,7 +36,7 @@ export function HomePage() {
           </h1>
           <p className="mt-3 sm:mt-4 text-gray-600 text-base sm:text-lg leading-relaxed max-w-md mx-auto lg:mx-0">
             Envie sua fatura do cartão ou o extrato bancário e receba um diagnóstico
-            financeiro feito por IA — direto ao ponto.
+            financeiro feito por IA, direto ao ponto.
           </p>
 
           {/* Bullets — escondidos no mobile para encurtar o caminho até o formulário */}
@@ -59,7 +59,7 @@ export function HomePage() {
         <div>
           <div className="bg-white rounded-2xl shadow-xl shadow-brand-900/5 border border-gray-100 p-5 sm:p-8">
             <div className="mb-6">
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900">Diagnóstico Express</h2>
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900">Diagnóstico Arko</h2>
               <p className="text-sm text-gray-500 mt-0.5">Preencha e envie seus arquivos para começar.</p>
             </div>
             <UploadStep />
