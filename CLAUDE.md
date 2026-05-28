@@ -33,7 +33,7 @@ Desafio técnico de 4 dias. O parceiro de programação é o usuário — avance
 | Frontend | React **^19**, Vite **^8** (criado com create-vite — v7 incompatível com plugin-react v6), Tailwind **^4** |
 | Tailwind setup | `@import "tailwindcss"` + plugin `@tailwindcss/vite` — **SEM** `tailwind.config.js` v3 |
 | UI | Shadcn/ui |
-| IA | Gemini com `responseSchema` — modelo via env `GEMINI_MODEL` (default **gemini-2.5-flash-lite**; free tier maior). Trocar p/ `gemini-2.5-flash` se ativar billing |
+| IA | Gemini com `responseSchema` — modelo via env `GEMINI_MODEL` (default **gemini-2.5-flash**; billing ativo, mais preciso). `gemini-2.5-flash-lite` p/ free tier |
 
 ---
 
@@ -286,6 +286,8 @@ O frontend usa proxy Vite: chamadas para `/api/*` vão para `http://localhost:33
 - **Risco de dupla contagem cartão × extrato**: o `-940,29 Pagamento de fatura` no extrato é a MESMA grana das transações da fatura. Somar os dois conta o gasto duas vezes — o LLM precisa tratar (anotado para o Dia 2).
 - **Parser calibrado na saída REAL do `pdf-parse`**, não no layout visual do PDF. Compra internacional ocupa 4 linhas (desc / USD / Conversão / R$ isolado); linhas de subtotal são ignoradas por não começarem com `DD MMM`. Ano inferido do cabeçalho `FATURA DD MMM AAAA`
 - **Pagamento de fatura ≠ despesa ≠ renda** — as linhas negativas ("Pagamento recebido"/"Pagamento em XX") são o usuário quitando o cartão, não receita. O parser só grava o sinal cru (não rotula). Na categorização, o **LLM** marca como categoria própria "Pagamento de fatura" e a **exclui do total de despesas e da análise de consumo**; serve só para indicar se a fatura foi quitada. O total de consumo do mês é a soma das despesas (amount > 0)
+- **IOF herda a categoria da compra (em código, não no LLM)** — uma linha `IOF de "X"` é a taxa da compra X e recebe a MESMA categoria de X. Feito por pós-processamento determinístico em `categorizeTransactions` (casa pela descrição/source), mais confiável do que pedir o casamento ao LLM.
+- **Guia de categorias no prompt + modelo flash** — `Educação` cobre cursos/idiomas mesmo sendo assinatura (Open English, Asimov); `Assinaturas e Software` cobre SaaS/ferramentas (Lovable, Render, Canva). O `flash-lite` errava Lovable→Compras; o `gemini-2.5-flash` (default, com billing) acerta.
 - **Categorização recebe o `leadName` como "titular da conta"** — sem essa dica, o LLM (sobretudo o `flash-lite`) confunde "Transferência recebida pelo Pix <nome-do-próprio-titular>" (auto-transferência) com Renda, inflando a renda com dinheiro que o dono só moveu entre contas dele. Com o nome do titular no prompt, recebidas E enviadas da própria pessoa caem em "Movimentação Interna". Bug real flagrado no teste; renda caiu de R$ 3.581,34 (falsa) para R$ 0 (correto).
 - **Tokens do Shadcn definidos no `@theme` (Tailwind 4)** — os componentes usam `bg-primary`, `border-input`, `ring-ring` etc., que não existiam (o `index.css` só tinha `@import`). Foram definidos em `@theme` junto da paleta `brand-*` (navy da Arko); `primary` = navy. Sem isso os botões/cards ficavam sem cor. Imports de imagem exigem `src/vite-env.d.ts` (`vite/client`).
 - **Retry com backoff nas chamadas ao Gemini** (`ai/retry.ts`, `withRetry`) — a API retorna 503/`UNAVAILABLE` ("high demand") e 429 de forma transitória; categorize/questionnaire/generate retentam até 4x (1s,2s,4s + jitter). Erros 4xx definitivos não são retentados. A `DiagnosisPage` ainda oferece "Tentar novamente" se tudo falhar.

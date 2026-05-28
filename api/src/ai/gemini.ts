@@ -46,9 +46,25 @@ COMO DECIDIR a categoria:
   Uma "Transferência recebida pelo Pix" cuja contraparte é o próprio titular NÃO é renda —
   é o titular movendo dinheiro entre contas dele mesmo. Marque como "Movimentação Interna".
 - Recebimento vindo de TERCEIRO (empresa, cliente, empregador — nome DIFERENTE do titular) → "Renda".
-- Demais saídas/compras → a categoria de despesa mais adequada pela descrição
-  (ex: Linkedin/Canva/Render/software → "Assinaturas e Software"; seguro/proteção → "Seguros").
-- Na dúvida entre despesas, use "Outros Gastos".
+- Demais saídas/compras → a categoria de despesa mais adequada pela descrição.
+
+GUIA DE CATEGORIAS DE DESPESA (use a intenção do gasto, não só a forma de cobrança):
+- "Educação": cursos, escolas, faculdade, plataformas de ENSINO ou IDIOMAS, mentorias.
+  É Educação MESMO que seja assinatura/app. Ex: Open English, Asimov Academy, Alura, Udemy, Duolingo.
+- "Assinaturas e Software": ferramentas digitais, SaaS, produtividade, hospedagem, streaming.
+  Ex: LinkedIn, Canva, Render.Com, Lovable, Figma, GitHub, Vercel, Netflix, Spotify, ChatGPT/OpenAI.
+- "Compras": produtos físicos / varejo / e-commerce de bens. Ex: Mizuno, lojas de roupa, eletrônicos, marketplaces.
+- "Alimentação": mercado, restaurante, delivery, padaria, iFood.
+- "Transporte": combustível, app de mobilidade, oficina, estacionamento, pedágio.
+- "Moradia": aluguel, condomínio, luz, água, gás, internet residencial.
+- "Saúde": farmácia, consultas, plano de saúde, academia.
+- "Seguros": seguro/proteção patrimonial, seguro auto/vida.
+- "Lazer": viagens, eventos, bares, hobbies.
+- "Outros Gastos": só quando realmente não encaixar em nenhuma acima.
+
+REGRA DO IOF: uma linha "IOF de \"X\"" é a taxa de uma compra internacional X — ela deve ter a
+MESMA categoria da compra X (ex: IOF de "Render.Com" → "Assinaturas e Software"). Procure a compra
+correspondente na lista e use a categoria dela.
 
 O campo "reason" deve ser uma frase curta justificando, citando o que na descrição levou à categoria.
 `.trim();
@@ -109,6 +125,29 @@ export async function categorizeTransactions(
   const text = response.text;
   if (!text) throw new Error("Gemini retornou resposta vazia.");
 
-  const parsed = JSON.parse(text) as { items: Categorization[] };
-  return parsed.items ?? [];
+  const items = (JSON.parse(text) as { items: Categorization[] }).items ?? [];
+
+  // Pós-processamento DETERMINÍSTICO: "IOF de \"X\"" é a taxa da compra X e deve
+  // herdar a categoria dela. Mais confiável do que depender do LLM casar as linhas.
+  const itemById = new Map(items.map((c) => [c.id, c]));
+  for (const t of txs) {
+    const m = t.description.match(/IOF\s+de\s+"(.+?)"/i);
+    if (!m) continue;
+    const alvo = m[1].toLowerCase();
+    const compra = txs.find(
+      (x) =>
+        x.id !== t.id &&
+        x.source === t.source &&
+        !/IOF/i.test(x.description) &&
+        x.description.toLowerCase().includes(alvo),
+    );
+    const compraCat = compra ? itemById.get(compra.id)?.category : undefined;
+    const iofItem = itemById.get(t.id);
+    if (compraCat && iofItem && iofItem.category !== compraCat) {
+      iofItem.category = compraCat;
+      iofItem.reason = `IOF atrelado a "${m[1]}" — herda a categoria da compra.`;
+    }
+  }
+
+  return items;
 }
