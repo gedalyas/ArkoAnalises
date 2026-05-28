@@ -1,4 +1,5 @@
 import express, { Express } from "express";
+import cors from "cors";
 import multer from "multer";
 import { parsePdfNubank } from "./parsers/parsePdfNubank";
 import { parseCsvNubank } from "./parsers/parseCsvNubank";
@@ -25,6 +26,12 @@ const upload = multer({
  */
 export function createApp(): Express {
   const app = express();
+
+  // CORS: o front (Vercel) chama a API (Railway) de outro domínio.
+  // Sem WEB_ORIGIN definido, libera qualquer origem (app público, sem cookie/login).
+  // Defina WEB_ORIGIN (1+ origens separadas por vírgula) para restringir em produção.
+  const allowed = process.env.WEB_ORIGIN?.split(",").map((o) => o.trim()).filter(Boolean);
+  app.use(cors({ origin: allowed && allowed.length > 0 ? allowed : true }));
 
   app.use(express.json());
 

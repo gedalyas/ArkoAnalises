@@ -1,4 +1,6 @@
-const BASE = "/api";
+// Em dev: "/api" (proxy do Vite → :3333). Em produção: URL da API na Railway
+// (defina VITE_API_URL na Vercel, ex: https://sua-api.up.railway.app — sem barra no fim).
+const BASE = import.meta.env.VITE_API_URL ?? "/api";
 
 export type UploadResponse = {
   diagnosisId: string;
