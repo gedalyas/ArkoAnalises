@@ -1,6 +1,6 @@
 # Diagnóstico Express — Arko Consultoria
 
-App web público (sem login) que recebe **1+ faturas de cartão (PDF/CSV)** e/ou **um extrato bancário (PDF/CSV)**, faz um **mini-questionário guiado por IA** e gera um **diagnóstico financeiro** com plano de ação — sem nunca inventar valores.
+App web público (sem login) que recebe **1+ faturas de cartão (PDF/CSV)** e/ou **um extrato bancário (PDF/CSV)**, faz um **mini-questionário guiado por IA** e gera um **diagnóstico financeiro** com plano de ação, sem nunca inventar valores.
 
 - **Aplicação hospedada:** https://arko-analises.vercel.app
 - **Repositório:** https://github.com/gedalyas/ArkoAnalises
@@ -16,7 +16,7 @@ Na pasta [`examples/`](examples/) há uma fatura e um extrato reais (do próprio
 - [`examples/extrato-conta.pdf`](examples/extrato-conta.pdf) / [`.csv`](examples/extrato-conta.csv) — extrato de conta Nubank.
 
 **Como testar:** abra a aplicação, escolha "Só fatura(s) do cartão" (ou "Fatura + extrato") e envie um dos arquivos acima (PDF ou CSV).
-Se usar o extrato, digite **`Davi Almeida Souto`** no campo Nome — assim a IA reconhece as transferências dele para as próprias contas como movimentação interna (e não como renda).
+Se usar o extrato, digite **`Davi Almeida Souto`** no campo Nome, assim a IA reconhece as transferências dele para as próprias contas como movimentação interna (e não como renda).
 
 ---
 
@@ -83,15 +83,15 @@ Uso o **`pdf-parse` (v2)** e calibro os parsers na **saída real de texto** do `
 ## O que eu cortaria (metade do tempo) e adicionaria (o dobro)
 
 **Com metade do tempo, cortaria:**
-- O **questionário dinâmico** — entregaria o diagnóstico só com os dados das transações (a coleta de lacunas é incremento, não o núcleo).
-- A **camada visual** mais elaborada (paleta de marca, hero responsivo) — um relatório simples já provaria o valor.
-- O **parser de PDF do extrato** (o mais trabalhoso) — manteria só fatura PDF + CSVs.
-- **Não cortaria** a separação cálculo/raciocínio nem a citação das linhas — é o que sustenta a confiança.
+- O **questionário dinâmico**, entregaria o diagnóstico só com os dados das transações (a coleta de lacunas é incremento, não o núcleo).
+- A **camada visual** mais elaborada (paleta de marca, hero responsivo), um relatório simples já provaria o valor.
+- O **parser de PDF do extrato** (o mais trabalhoso), manteria só fatura PDF + CSVs.
+- **Não cortaria** a separação cálculo/raciocínio nem a citação das linhas, é o que sustenta a confiança.
 
 **Com o dobro do tempo, adicionaria:**
 - **Suporte multi-banco** (hoje calibrado só no Nubank): detecção de layout + um parser por banco, com fixtures reais de cada um.
 - **Processamento assíncrono** do diagnóstico (fila + status PROCESSING/DONE com polling), em vez de bloquear a requisição.
-- **Testes automatizados** dos parsers e do `computeTotals` (os totais batem com os subtotais impressos nas faturas — daria para travar isso em CI).
+- **Testes automatizados** dos parsers e do `computeTotals` (os totais batem com os subtotais impressos nas faturas, daria para travar isso em CI).
 - **Histórico de diagnósticos** por lead e exportação em PDF.
 
 ---
@@ -100,7 +100,7 @@ Uso o **`pdf-parse` (v2)** e calibro os parsers na **saída real de texto** do `
 
 - **Coleta mínima e sem cadastro**: apenas nome e e-mail do lead, mais os arquivos que ele escolhe enviar.
 - **Soft-delete** (`deletedAt`) no schema desde o início: permite atender pedido de exclusão (direito do titular) sem migration; consultas já filtram `deletedAt: null`.
-- **Arquivos processados em memória** (`multer` em memória) — o PDF/CSV não é gravado em disco no servidor; persistem apenas as transações estruturadas necessárias para o diagnóstico.
+- **Arquivos processados em memória** (`multer` em memória), o PDF/CSV não é gravado em disco no servidor; persistem apenas as transações estruturadas necessárias para o diagnóstico.
 - **Dados não compartilhados** com terceiros. O único processamento externo é o envio do **texto já extraído e anonimizável** ao Gemini para categorização/narrativa.
 - **Segredos só em variáveis de ambiente** (`.env` fora do versionamento); a chave do Gemini nunca aparece no código nem no bundle do cliente.
 - **Dados de leads nunca são versionados**: faturas/extratos enviados em testes ficam em `api/scripts/fixtures/`, que está no `.gitignore`, e os parsers usam padrões estruturais (sem nomes/contas fixos no código). Os arquivos em `examples/` são extratos/faturas do **próprio desenvolvedor** (CPF mascarado), incluídos com consentimento apenas para o avaliador testar.
