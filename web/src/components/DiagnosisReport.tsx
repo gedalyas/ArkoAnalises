@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { TrendingDown, TrendingUp, Wallet, PiggyBank, AlertTriangle, ListChecks, CalendarClock, PieChart, Compass, Scale, ChevronRight } from "lucide-react";
+import { TrendingDown, TrendingUp, Wallet, PiggyBank, AlertTriangle, ListChecks, CalendarClock, PieChart, Compass, Scale, ChevronRight, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -63,6 +63,17 @@ export function DiagnosisReport({ result, transactions }: { result: DiagnosisRes
   const categorias = Object.entries(totais.despesaPorCategoria).sort((a, b) => b[1] - a[1]);
   const maxCat = categorias[0]?.[1] ?? 1;
 
+  // Transparência: quantas transações foram desconsideradas (não são gasto nem renda).
+  const interna = transactions.filter((t) => t.category === "Movimentação Interna").length;
+  const invest = transactions.filter((t) => t.category === "Investimento (Aplicação/Resgate)").length;
+  const fatura = transactions.filter((t) => t.category === "Pagamento de Fatura").length;
+  const partes: string[] = [];
+  if (interna) partes.push(`${interna} ${interna === 1 ? "transferência" : "transferências"} entre suas próprias contas`);
+  if (invest) partes.push(`${invest} de investimento (RDB)`);
+  if (fatura) partes.push(`${fatura} pagamento${fatura === 1 ? "" : "s"} de fatura`);
+  const neutras = interna + invest + fatura;
+  const listaNeutras = partes.length > 1 ? partes.slice(0, -1).join(", ") + " e " + partes[partes.length - 1] : partes[0];
+
   return (
     <div className="space-y-6">
       {/* Totais — calculados em código */}
@@ -81,6 +92,17 @@ export function DiagnosisReport({ result, transactions }: { result: DiagnosisRes
           * Renda informada por você no questionário — não consta nos extratos/faturas enviados.
         </p>
       ) : null}
+
+      {/* Transparência: o que foi desconsiderado e por quê */}
+      {neutras > 0 && (
+        <div className="flex gap-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-500">
+          <Info className="h-4 w-4 shrink-0 text-gray-400" />
+          <p>
+            {neutras} {neutras === 1 ? "movimentação foi desconsiderada" : "movimentações foram desconsideradas"} no
+            cálculo por não serem gasto nem renda: {listaNeutras}.
+          </p>
+        </div>
+      )}
 
       {/* Despesa por categoria */}
       <Card>

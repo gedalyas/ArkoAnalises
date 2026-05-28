@@ -22,6 +22,7 @@ export function DiagnosisPage() {
   const { id } = useParams<{ id: string }>();
   const initRef = useRef(false);
   const sendingRef = useRef(false); // guard síncrono contra chamadas concorrentes ao questionário
+  const chatRef = useRef<HTMLDivElement>(null); // container do chat, para auto-scroll
 
   const [phase, setPhase] = useState<Phase>("loading");
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -108,6 +109,12 @@ export function DiagnosisPage() {
     })();
   }, [id]);
 
+  // Rola o chat pro fim a cada nova mensagem / indicador de digitação (como num bate-papo).
+  useEffect(() => {
+    const el = chatRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [messages, busy]);
+
   // ── Telas ────────────────────────────────────────────────────────────────
   if (phase === "loading") return <Centered><Spinner label="Carregando…" /></Centered>;
 
@@ -175,7 +182,7 @@ export function DiagnosisPage() {
           <p className="text-xs text-gray-400 mb-4">Pergunta {Math.min(turn, MAX_TURNS)} de até {MAX_TURNS}</p>
 
           {/* chat */}
-          <div className="space-y-3 mb-5 max-h-[45vh] overflow-y-auto">
+          <div ref={chatRef} className="space-y-3 mb-5 max-h-[45vh] overflow-y-auto scroll-smooth">
             {messages.map((m, i) => (
               <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
                 <div
