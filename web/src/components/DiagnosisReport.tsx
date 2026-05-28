@@ -1,8 +1,10 @@
-import { TrendingDown, TrendingUp, Wallet, PiggyBank, AlertTriangle, ListChecks, CalendarClock } from "lucide-react";
+import { useState } from "react";
+import { TrendingDown, TrendingUp, Wallet, PiggyBank, AlertTriangle, ListChecks, CalendarClock, PieChart, Compass, Scale, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import type { DiagnosisResult, Transaction } from "@/lib/api";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -25,19 +27,33 @@ function Stat({ icon, label, value, tone }: {
 /**
  * Mostra AS LINHAS reais das transações que sustentam uma afirmação (Regra de Ouro:
  * nada de número solto — a pessoa vê a descrição e o valor que embasam o que a IA disse).
+ * Recolhido por padrão pra não poluir; um clique revela as linhas.
  */
 function CitedLines({ ids, byId }: { ids: string[]; byId: Map<string, Transaction> }) {
+  const [open, setOpen] = useState(false);
   const items = (ids ?? []).map((id) => byId.get(id)).filter(Boolean) as Transaction[];
   if (items.length === 0) return null;
   return (
-    <ul className="mt-2 space-y-1 border-l-2 border-gray-100 pl-3">
-      {items.map((t) => (
-        <li key={t.id} className="flex items-baseline justify-between gap-3 text-xs text-gray-500">
-          <span className="truncate">{t.description}</span>
-          <span className="shrink-0 tabular-nums font-medium text-gray-600">{brl(Number(t.amount))}</span>
-        </li>
-      ))}
-    </ul>
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-400 hover:text-gray-600"
+      >
+        <ChevronRight className={cn("h-3 w-3 transition-transform", open && "rotate-90")} />
+        {items.length} {items.length === 1 ? "transação que sustenta" : "transações que sustentam"} isto
+      </button>
+      {open && (
+        <ul className="mt-1.5 space-y-1 border-l-2 border-gray-100 pl-3">
+          {items.map((t) => (
+            <li key={t.id} className="flex items-baseline justify-between gap-3 text-xs">
+              <span className="min-w-0 truncate text-gray-500" title={t.description}>{t.description}</span>
+              <span className="shrink-0 tabular-nums font-medium text-gray-600">{brl(Number(t.amount))}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -68,7 +84,11 @@ export function DiagnosisReport({ result, transactions }: { result: DiagnosisRes
 
       {/* Despesa por categoria */}
       <Card>
-        <CardHeader><CardTitle className="text-base">Gastos por categoria</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <PieChart className="h-4 w-4 text-brand-600" /> Gastos por categoria
+          </CardTitle>
+        </CardHeader>
         <CardContent className="space-y-3">
           {categorias.length === 0 && <p className="text-sm text-gray-500">Nenhuma despesa categorizada.</p>}
           {categorias.map(([cat, val]) => (
@@ -85,7 +105,11 @@ export function DiagnosisReport({ result, transactions }: { result: DiagnosisRes
 
       {/* 1. Para onde vai o dinheiro */}
       <Card>
-        <CardHeader><CardTitle className="text-base">Para onde vai o seu dinheiro</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Compass className="h-4 w-4 text-brand-600" /> Para onde vai o seu dinheiro
+          </CardTitle>
+        </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-gray-600 leading-relaxed">{categorizacao.resumo}</p>
           <div className="space-y-3">
@@ -123,7 +147,11 @@ export function DiagnosisReport({ result, transactions }: { result: DiagnosisRes
 
       {/* 3. Balanço */}
       <Card>
-        <CardHeader><CardTitle className="text-base">Balanço geral</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Scale className="h-4 w-4 text-brand-600" /> Balanço geral
+          </CardTitle>
+        </CardHeader>
         <CardContent><p className="text-sm text-gray-600 leading-relaxed">{balanco.observacao}</p></CardContent>
       </Card>
 
@@ -141,7 +169,7 @@ export function DiagnosisReport({ result, transactions }: { result: DiagnosisRes
               {plano30dias.acoes.map((a, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
                   <span className="mt-0.5 text-brand-500">→</span>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <span>{a.acao}</span>
                     <CitedLines ids={a.transacaoIds} byId={byId} />
                   </div>
