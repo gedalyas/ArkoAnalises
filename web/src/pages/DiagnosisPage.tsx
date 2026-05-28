@@ -8,6 +8,7 @@ import {
   sendQuestionnaireAnswer,
   generateDiagnosis,
   type DiagnosisResult,
+  type Transaction,
 } from "@/lib/api";
 import { DiagnosisReport } from "@/components/DiagnosisReport";
 import logoArko from "@/assets/logotipo-horizontal.png";
@@ -27,6 +28,7 @@ export function DiagnosisPage() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<DiagnosisResult | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   function fail(e: unknown) {
@@ -70,6 +72,7 @@ export function DiagnosisPage() {
     (async () => {
       try {
         const s = await getDiagnosis(id);
+        setTransactions(s.transactions ?? []);
         if (s.status === "DONE" && s.result) {
           setResult(s.result);
           setPhase("done");
@@ -132,11 +135,11 @@ export function DiagnosisPage() {
       <main className="min-h-screen py-10 px-4">
         <div className="mx-auto max-w-2xl">
           <div className="mb-8 flex flex-col items-center text-center">
-            <img src={logoArko} alt="Arko Consultoria Financeira" className="h-8 w-auto mb-4" />
+            <img src={logoArko} alt="Arko Consultoria Financeira" className="h-20 sm:h-20 lg:h-28 w-auto mb-6 lg:mb-8 mx-auto lg:mx-0" />
             <h1 className="text-2xl font-bold text-gray-900">Seu Diagnóstico Express</h1>
             <p className="text-sm text-gray-500 mt-1">Análise feita sobre as transações que você enviou.</p>
           </div>
-          <DiagnosisReport result={result} />
+          <DiagnosisReport result={result} transactions={transactions} />
           <p className="text-center text-xs text-gray-400 mt-8">
             Diagnóstico gerado a partir das transações enviadas. Os valores são calculados sobre os
             dados reais; nenhuma estimativa foi inventada.
@@ -153,7 +156,7 @@ export function DiagnosisPage() {
     <main className="min-h-screen flex items-start justify-center p-4 pt-12">
       <div className="w-full max-w-xl">
         <div className="flex flex-col items-center text-center mb-6">
-          <img src={logoArko} alt="Arko Consultoria Financeira" className="h-7 w-auto mb-4" />
+          <img src={logoArko} alt="Arko Consultoria Financeira" className="h-20 sm:h-20 lg:h-28 w-auto mb-6 lg:mb-8 mx-auto lg:mx-0" />
           <p className="text-sm font-medium text-brand-600 mb-1 flex items-center justify-center gap-1.5">
             <Sparkles className="h-4 w-4" /> Algumas perguntas rápidas
           </p>

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import type { DiagnosisResult } from "@/lib/api";
+import type { DiagnosisResult, Transaction } from "@/lib/api";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -22,18 +22,28 @@ function Stat({ icon, label, value, tone }: {
   );
 }
 
-/** Cita as transações que sustentam uma afirmação (Regra de Ouro). */
-function Cites({ ids }: { ids: string[] }) {
-  if (!ids?.length) return null;
+/**
+ * Mostra AS LINHAS reais das transações que sustentam uma afirmação (Regra de Ouro:
+ * nada de número solto — a pessoa vê a descrição e o valor que embasam o que a IA disse).
+ */
+function CitedLines({ ids, byId }: { ids: string[]; byId: Map<string, Transaction> }) {
+  const items = (ids ?? []).map((id) => byId.get(id)).filter(Boolean) as Transaction[];
+  if (items.length === 0) return null;
   return (
-    <span className="ml-2 inline-flex items-center text-[11px] text-gray-400">
-      {ids.length} {ids.length === 1 ? "transação" : "transações"}
-    </span>
+    <ul className="mt-2 space-y-1 border-l-2 border-gray-100 pl-3">
+      {items.map((t) => (
+        <li key={t.id} className="flex items-baseline justify-between gap-3 text-xs text-gray-500">
+          <span className="truncate">{t.description}</span>
+          <span className="shrink-0 tabular-nums font-medium text-gray-600">{brl(Number(t.amount))}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
-export function DiagnosisReport({ result }: { result: DiagnosisResult }) {
+export function DiagnosisReport({ result, transactions }: { result: DiagnosisResult; transactions: Transaction[] }) {
   const { totais, categorizacao, vazamentos, balanco, plano30dias, plano60dias } = result;
+  const byId = new Map(transactions.map((t) => [t.id, t]));
   const categorias = Object.entries(totais.despesaPorCategoria).sort((a, b) => b[1] - a[1]);
   const maxCat = categorias[0]?.[1] ?? 1;
 
@@ -41,14 +51,20 @@ export function DiagnosisReport({ result }: { result: DiagnosisResult }) {
     <div className="space-y-6">
       {/* Totais — calculados em código */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon={<TrendingUp className="h-4 w-4" />} label="Renda identificada" tone="pos"
-          value={totais.rendaTotal > 0 ? brl(totais.rendaTotal) : "—"} />
+        <Stat icon={<TrendingUp className="h-4 w-4" />}
+          label={totais.rendaInformada ? "Renda informada" : "Renda identificada"} tone="pos"
+          value={totais.rendaConsiderada > 0 ? brl(totais.rendaConsiderada) : "—"} />
         <Stat icon={<TrendingDown className="h-4 w-4" />} label="Despesa total" tone="neg" value={brl(totais.despesaTotal)} />
         <Stat icon={<Wallet className="h-4 w-4" />} label="Saldo livre"
           tone={totais.saldoLivre >= 0 ? "pos" : "neg"} value={brl(totais.saldoLivre)} />
         <Stat icon={<PiggyBank className="h-4 w-4" />} label="Taxa de poupança"
           value={totais.taxaPoupanca !== null ? `${totais.taxaPoupanca.toFixed(1)}%` : "—"} />
       </div>
+      {totais.rendaInformada ? (
+        <p className="-mt-3 text-xs text-gray-400">
+          * Renda informada por você no questionário — não consta nos extratos/faturas enviados.
+        </p>
+      ) : null}
 
       {/* Despesa por categoria */}
       <Card>
@@ -75,11 +91,9 @@ export function DiagnosisReport({ result }: { result: DiagnosisResult }) {
           <div className="space-y-3">
             {categorizacao.destaques.map((d, i) => (
               <div key={i} className="rounded-lg bg-gray-50 p-3">
-                <div className="flex items-center justify-between">
-                  <Badge variant="secondary">{d.categoria}</Badge>
-                  <Cites ids={d.transacaoIds} />
-                </div>
+                <Badge variant="secondary">{d.categoria}</Badge>
                 <p className="text-sm text-gray-700 mt-2">{d.observacao}</p>
+                <CitedLines ids={d.transacaoIds} byId={byId} />
               </div>
             ))}
           </div>
@@ -98,11 +112,9 @@ export function DiagnosisReport({ result }: { result: DiagnosisResult }) {
           <div className="space-y-3">
             {vazamentos.itens.map((it, i) => (
               <div key={i} className="rounded-lg border border-amber-100 bg-amber-50/50 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium text-gray-800">{it.descricao}</p>
-                  <Cites ids={it.transacaoIds} />
-                </div>
-                <p className="text-sm text-gray-600 mt-1.5">💡 {it.sugestao}</p>
+                <p className="text-sm font-medium text-gray-800">{it.descricao}</p>
+                <CitedLines ids={it.transacaoIds} byId={byId} />
+                <p className="text-sm text-gray-600 mt-2">💡 {it.sugestao}</p>
               </div>
             ))}
           </div>
@@ -129,7 +141,10 @@ export function DiagnosisReport({ result }: { result: DiagnosisResult }) {
               {plano30dias.acoes.map((a, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
                   <span className="mt-0.5 text-brand-500">→</span>
-                  <span>{a.acao}<Cites ids={a.transacaoIds} /></span>
+                  <div className="flex-1">
+                    <span>{a.acao}</span>
+                    <CitedLines ids={a.transacaoIds} byId={byId} />
+                  </div>
                 </li>
               ))}
             </ul>

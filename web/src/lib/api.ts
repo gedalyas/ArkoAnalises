@@ -16,6 +16,8 @@ export type QuestionnaireResponse = {
 export type DiagnosisResult = {
   totais: {
     rendaTotal: number;
+    rendaInformada: number | null;
+    rendaConsiderada: number;
     despesaTotal: number;
     saldoLivre: number;
     taxaPoupanca: number | null;
@@ -42,19 +44,52 @@ export type QuestionnaireMessage = {
   done?: boolean;
 };
 
+export type Transaction = {
+  id: string;
+  date: string;
+  description: string;
+  amount: string; // Decimal serializado como string pelo Prisma
+  source: "CREDIT_CARD" | "BANK";
+  category: string | null;
+};
+
 export type DiagnosisState = {
   id: string;
   status: DiagnosisStatus;
   result: DiagnosisResult | null;
   errorMsg: string | null;
   questionnaire: QuestionnaireMessage[] | null;
+  transactions: Transaction[];
 };
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, options);
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? `Erro ${res.status}`);
-  return json as T;
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, options);
+  } catch {
+    throw new Error("Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.");
+  }
+
+  // Lê como texto primeiro: respostas vazias (ex: cold start / 502 do edge) ou
+  // não-JSON não devem quebrar com "Unexpected end of JSON input".
+  const text = await res.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      /* corpo não-JSON (ex: página de erro do proxy) */
+    }
+  }
+
+  if (!res.ok) {
+    const msg = (data as { error?: string } | null)?.error;
+    throw new Error(msg ?? `O servidor respondeu com erro ${res.status}. Tente novamente em instantes.`);
+  }
+  if (data === null) {
+    throw new Error("O servidor demorou para responder (pode estar iniciando). Tente novamente em instantes.");
+  }
+  return data as T;
 }
 
 export async function uploadFile(

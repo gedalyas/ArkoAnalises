@@ -22,6 +22,10 @@ export type TxForDiagnosis = {
 export type DiagnosisResult = {
   /** Totais calculados em código — não vêm do LLM */
   totais: Totals & {
+    /** renda mensal informada pelo lead no questionário (não consta nos documentos) */
+    rendaInformada: number | null;
+    /** renda usada na análise: a informada (se houver) senão a identificada nas transações */
+    rendaConsiderada: number;
     saldoLivre: number;
     taxaPoupanca: number | null;
   };
@@ -64,7 +68,9 @@ Você é um consultor financeiro da Arko Consultoria gerando um diagnóstico par
 REGRAS ABSOLUTAS — nunca violar:
 1. NUNCA invente, altere ou estime valores numéricos. Os totais já foram calculados pelo sistema e serão fornecidos.
 2. Para toda afirmação, cite os "id"s das transações que a sustentam no campo "transacaoIds".
-3. Se a renda for zero, não estime renda — diga que não foi identificada nos dados.
+3. Sobre a renda:
+   - Se houver "renda informada pelo lead", use-a como base da análise, deixando claro que foi INFORMADA por ele (não consta nos extratos/faturas enviados).
+   - Se não houver renda informada nem identificada nas transações, diga que a renda não foi identificada — não estime.
 4. Seja direto e concreto. Evite generalidades do tipo "tente economizar mais".
 5. Nos planos de ação, sugira ações específicas baseadas nas transações reais — mencione nomes de estabelecimentos/serviços quando relevante.
 
@@ -176,19 +182,29 @@ export async function generateDiagnosis(
   txs: TxForDiagnosis[],
   totals: Totals,
   questionnaire?: unknown,
+  rendaInformada?: number | null,
 ): Promise<DiagnosisResult> {
-  const saldoLivre = totals.rendaTotal - totals.despesaTotal;
+  // Renda da análise: a informada pelo lead tem prioridade (a renda quase nunca
+  // aparece nos documentos enviados); senão usa a identificada nas transações.
+  const rendaConsiderada =
+    rendaInformada && rendaInformada > 0 ? rendaInformada : totals.rendaTotal;
+  const saldoLivre = rendaConsiderada - totals.despesaTotal;
   const taxaPoupanca =
-    totals.rendaTotal > 0
-      ? Math.round((saldoLivre / totals.rendaTotal) * 10000) / 100
+    rendaConsiderada > 0
+      ? Math.round((saldoLivre / rendaConsiderada) * 10000) / 100
       : null;
+
+  const linhaRenda =
+    rendaInformada && rendaInformada > 0
+      ? `- Renda mensal INFORMADA pelo lead (não consta nos documentos): R$ ${rendaInformada.toFixed(2)} — use como base`
+      : `- Renda identificada nas transações: R$ ${totals.rendaTotal.toFixed(2)}`;
 
   const prompt = `
 TOTAIS DO PERÍODO (calculados pelo sistema — use estes números, não recalcule):
-- Renda total: R$ ${totals.rendaTotal.toFixed(2)}
+${linhaRenda}
 - Despesa total: R$ ${totals.despesaTotal.toFixed(2)}
 - Saldo livre: R$ ${saldoLivre.toFixed(2)}
-- Taxa de poupança implícita: ${taxaPoupanca !== null ? taxaPoupanca.toFixed(1) + "%" : "indisponível (sem renda identificada nos dados)"}
+- Taxa de poupança: ${taxaPoupanca !== null ? taxaPoupanca.toFixed(1) + "%" : "indisponível (renda não identificada)"}
 - Despesa por categoria: ${JSON.stringify(totals.despesaPorCategoria, null, 2)}
 ${questionnaire ? `\nRESPOSTAS DO QUESTIONÁRIO:\n${JSON.stringify(questionnaire, null, 2)}` : "\n(Questionário não respondido — baseie-se apenas nos dados das transações)"}
 
@@ -216,7 +232,13 @@ ${JSON.stringify(txs, null, 2)}
   const llmOutput = JSON.parse(text) as Omit<DiagnosisResult, "totais">;
 
   return {
-    totais: { ...totals, saldoLivre, taxaPoupanca },
+    totais: {
+      ...totals,
+      rendaInformada: rendaInformada && rendaInformada > 0 ? rendaInformada : null,
+      rendaConsiderada,
+      saldoLivre,
+      taxaPoupanca,
+    },
     ...llmOutput,
   };
 }

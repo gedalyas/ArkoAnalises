@@ -11,6 +11,7 @@ import { categorizeTransactions } from "./ai/gemini";
 import { generateDiagnosis } from "./ai/generateDiagnosis";
 import { getNextQuestion, type QuestionnaireMessage } from "./ai/questionnaire";
 import { computeTotals } from "./diagnosis/totals";
+import { extractRendaInformada } from "./diagnosis/income";
 
 const SOURCES: ParsedTransaction["source"][] = ["CREDIT_CARD", "BANK"];
 
@@ -314,10 +315,12 @@ export function createApp(): Express {
         category: t.category!,
       }));
 
+      const rendaInformada = extractRendaInformada(diagnosis.questionnaire);
       const result = await generateDiagnosis(
         txsForLlm,
         totals,
         diagnosis.questionnaire ?? undefined,
+        rendaInformada,
       );
 
       await prisma.diagnosis.update({
@@ -353,6 +356,10 @@ export function createApp(): Express {
         result: true,
         errorMsg: true,
         questionnaire: true,
+        transactions: {
+          select: { id: true, date: true, description: true, amount: true, source: true, category: true },
+          orderBy: { date: "asc" },
+        },
       },
     });
     if (!diagnosis) {
